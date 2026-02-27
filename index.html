@@ -26,12 +26,6 @@
 
   .panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;margin-bottom:28px;animation:fadeUp 0.6s ease;}
 
-  .api-setup{background:rgba(248,113,113,0.08);border:1px solid var(--red);border-radius:8px;padding:18px;margin-bottom:24px;}
-  .api-setup h3{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--red);margin-bottom:10px;letter-spacing:1px;}
-  .api-setup p{font-size:14px;margin-bottom:12px;line-height:1.6;}
-  .api-setup a{color:var(--amber);text-decoration:underline;}
-  .api-setup input{margin-bottom:8px;}
-
   .src-tabs{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px;}
   .src-tab{background:var(--bg);border:2px solid var(--border);border-radius:10px;padding:18px 14px;cursor:pointer;transition:all 0.25s;text-align:center;}
   .src-tab:hover{border-color:var(--gold-dim);}
@@ -147,16 +141,6 @@
 
   <!-- SETUP -->
   <div class="panel" id="setupPanel">
-    <div class="api-setup">
-      <h3>⚠️ API Key Required</h3>
-      <p>Get a free API key from <a href="https://openrouter.ai/keys" target="_blank">OpenRouter.ai</a>. Free tier includes credits for testing.</p>
-      <div class="field">
-        <label>OpenRouter API Key</label>
-        <input type="password" id="apiKey" placeholder="sk-or-v1-..." oninput="chkReady()">
-      </div>
-      <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">🔒 Your key stays in your browser only. Never shared.</p>
-    </div>
-
     <div class="src-tabs">
       <div class="src-tab on" id="stPDF" onclick="setSrc('pdf')">
         <div class="si">📄</div>
@@ -293,19 +277,11 @@
 
 </div>
 <script>
-// CORS proxy alternatives for Neocities
-const CORS_PROXIES = [
-  "https://api.allorigins.win/raw?url=",
-  "https://corsproxy.io/?",
-  "" // Direct (for local testing)
-];
-let currentProxyIndex = 0;
+const API_KEY = "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";
+const API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const M_PDF   = "arcee-ai/trinity-large-preview:free";
+const M_WAEC  = "openai/gpt-oss-120b:free";
 
-const BASE_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const M_PDF     = "arcee-ai/trinity-large-preview:free";
-const M_WAEC    = "openai/gpt-oss-120b:free";
-
-let apiKey    = "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";
 let src       = "pdf";
 let sMode     = "feynman";
 let pdfText   = "";
@@ -344,20 +320,6 @@ const WTOPICS = {
   "French":["Grammar","Vocabulary","Reading Comprehension","Oral French","Letter Writing"]
 };
 
-// Load API key from localStorage
-window.addEventListener('load', () => {
-  // Pre-fill with embedded API key
-  document.getElementById('apiKey').value = apiKey;
-  // Hide the API setup warning since key is embedded
-  document.querySelector('.api-setup').style.display = 'none';
-  const saved = localStorage.getItem('studyagent_apikey');
-  if (saved) {
-    document.getElementById('apiKey').value = saved;
-    apiKey = saved;
-  }
-  chkReady();
-});
-
 // ── SOURCE TABS ──────────────────────────────────
 function setSrc(s) {
   src = s;
@@ -380,17 +342,12 @@ function onSubj() {
 }
 
 function chkReady() {
-  apiKey = document.getElementById('apiKey').value.trim();
-  if (apiKey) localStorage.setItem('studyagent_apikey', apiKey);
-  
-  let contentReady = false;
   if (src === 'waec') {
-    contentReady = document.getElementById('wSubject').value || document.getElementById('wCustom').value.trim();
+    const ok = document.getElementById('wSubject').value || document.getElementById('wCustom').value.trim();
+    document.getElementById('startBtn').disabled = !ok;
   } else {
-    contentReady = pdfText.length > 0;
+    document.getElementById('startBtn').disabled = pdfText.length === 0;
   }
-  
-  document.getElementById('startBtn').disabled = !apiKey || !contentReady;
 }
 
 // ── PDF LOADING ───────────────────────────────────
@@ -490,93 +447,46 @@ function setStudyMode(m) {
 
 // ── AI CALL ───────────────────────────────────────
 async function callAI(userMsg) {
-  if (!apiKey) {
-    addMsg('ai', '❌ Please enter your OpenRouter API key in the setup panel.');
-    return;
-  }
-  
   if (userMsg) hist.push({role:'user', content: userMsg});
   setDot('thinking');
   const tid = mkThinking();
-  
-  // Try with current proxy, fallback to next if fails
-  for (let attempt = 0; attempt < CORS_PROXIES.length; attempt++) {
-    try {
-      const proxy = CORS_PROXIES[currentProxyIndex];
-      const url = proxy ? proxy + encodeURIComponent(BASE_API_URL) : BASE_API_URL;
-      
-      const model = src === 'waec' ? M_WAEC : M_PDF;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + apiKey,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': window.location.origin,
-          'X-Title': 'StudyAgent'
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: hist,
-          max_tokens: 1024,
-          temperature: 0.4
-        })
-      });
-      
-      rmThinking(tid);
-      
-      if (!res.ok) {
-        let errorMsg = 'API Error ' + res.status;
-        try {
-          const errorData = await res.json();
-          errorMsg += ': ' + (errorData.error?.message || res.statusText);
-          if (res.status === 401) {
-            errorMsg += '\n\n🔑 Check your API key at https://openrouter.ai/keys';
-          }
-        } catch(e) {
-          errorMsg += ': ' + res.statusText;
-        }
-        
-        // Try next proxy on error
-        if (attempt < CORS_PROXIES.length - 1) {
-          currentProxyIndex = (currentProxyIndex + 1) % CORS_PROXIES.length;
-          continue;
-        }
-        
-        addMsg('ai', '❌ ' + errorMsg);
-        setDot('idle');
-        return;
-      }
-      
-      const data = await res.json();
-      const reply = data.choices?.[0]?.message?.content || '(empty response)';
-      hist.push({role:'assistant', content: reply});
-
-      const isC = /\bCORRECT\b/i.test(reply) && !/PARTIALLY CORRECT/i.test(reply) && !/NOT CORRECT/i.test(reply);
-      const isW = /\b(WRONG|INCORRECT)\b/i.test(reply);
-      const isP = /PARTIALLY CORRECT/i.test(reply);
-      if (waiting && (isC || isW || isP)) {
-        if (isC) score.c++; else if (isW) score.w++; else { score.c+=0.5; score.w+=0.5; }
-        score.t++;
-        updScores();
-        waiting = false;
-      }
-      addMsg('ai', reply);
-      doSpeak(reply);
-      setDot('ready');
-      waiting = true;
-      return; // Success!
-      
-    } catch(err) {
-      // Try next proxy
-      if (attempt < CORS_PROXIES.length - 1) {
-        currentProxyIndex = (currentProxyIndex + 1) % CORS_PROXIES.length;
-        continue;
-      }
-      
-      rmThinking(tid);
-      addMsg('ai', '❌ Network error: ' + err.message + '\n\n🌐 CORS issue detected. This may not work on Neocities.\n\n💡 Try: Download this HTML file and open it locally, or host on GitHub Pages instead.');
-      setDot('idle');
+  try {
+    const model = src === 'waec' ? M_WAEC : M_PDF;
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + API_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({model, messages: hist, max_tokens:1024, temperature:0.4})
+    });
+    rmThinking(tid);
+    if (!res.ok) {
+      const e = await res.json().catch(()=>({}));
+      addMsg('ai', '❌ API Error ' + res.status + ': ' + (e.error?.message || res.statusText));
+      setDot('idle'); return;
     }
+    const data = await res.json();
+    const reply = data.choices?.[0]?.message?.content || '(empty response)';
+    hist.push({role:'assistant', content: reply});
+
+    const isC = /\bCORRECT\b/i.test(reply) && !/PARTIALLY CORRECT/i.test(reply) && !/NOT CORRECT/i.test(reply);
+    const isW = /\b(WRONG|INCORRECT)\b/i.test(reply);
+    const isP = /PARTIALLY CORRECT/i.test(reply);
+    if (waiting && (isC || isW || isP)) {
+      if (isC) score.c++; else if (isW) score.w++; else { score.c+=0.5; score.w+=0.5; }
+      score.t++;
+      updScores();
+      waiting = false;
+    }
+    addMsg('ai', reply);
+    doSpeak(reply);
+    setDot('ready');
+    waiting = true;
+  } catch(err) {
+    rmThinking(tid);
+    addMsg('ai', '❌ Network error: ' + err.message);
+    setDot('idle');
   }
 }
 
@@ -601,7 +511,7 @@ function togMic() { recording ? stopMic() : startMic(); }
 
 function startMic() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { alert('Speech recognition needs Chrome/Edge browser.'); return; }
+  if (!SR) { alert('Speech recognition needs Chrome.'); return; }
   stopSpeak();
   recog = new SR();
   recog.continuous = true; recog.interimResults = true; recog.lang = 'en-US';
