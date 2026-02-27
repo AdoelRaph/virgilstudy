@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StudyAgent — AI Tutor</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=JetBrains+Mono:wght@300;400;500&family=Crimson+Pro:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root {
+    --bg:#0c0b0f; --surface:#13111a; --surface2:#1c1928; --border:#2a2540;
+    --gold:#d4a853; --gold-dim:#8a6930; --amber:#f0a500;
+    --green:#4ade80; --red:#f87171; --blue:#60a5fa;
+    --text:#e8e0d0; --text-dim:#8a8090; --text-muted:#4a4558;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,serif;font-size:18px;min-height:100vh;overflow-x:hidden;}
+  body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;opacity:0.5;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");}
+  .app{position:relative;z-index:1;max-width:900px;margin:0 auto;padding:40px 24px;}
+
+  .header{text-align:center;margin-bottom:40px;animation:fadeDown 0.7s ease;}
+  .badge{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--gold-dim);border:1px solid var(--gold-dim);padding:4px 12px;border-radius:2px;margin-bottom:14px;}
+  h1{font-family:'Playfair Display',serif;font-size:clamp(34px,6vw,54px);font-weight:900;line-height:1.1;}
+  h1 span{color:var(--gold);}
+  .header-sub{font-size:15px;color:var(--text-dim);margin-top:6px;font-style:italic;}
+
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;margin-bottom:28px;animation:fadeUp 0.6s ease;}
+
+  .api-setup{background:rgba(248,113,113,0.08);border:1px solid var(--red);border-radius:8px;padding:18px;margin-bottom:24px;}
+  .api-setup h3{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--red);margin-bottom:10px;letter-spacing:1px;}
+  .api-setup p{font-size:14px;margin-bottom:12px;line-height:1.6;}
+  .api-setup a{color:var(--amber);text-decoration:underline;}
+  .api-setup input{margin-bottom:8px;}
+
+  .src-tabs{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px;}
+  .src-tab{background:var(--bg);border:2px solid var(--border);border-radius:10px;padding:18px 14px;cursor:pointer;transition:all 0.25s;text-align:center;}
+  .src-tab:hover{border-color:var(--gold-dim);}
+  .src-tab.on{border-color:var(--gold);background:var(--surface2);}
+  .src-tab .si{font-size:24px;margin-bottom:6px;}
+  .src-tab .sn{font-family:'Playfair Display',serif;font-weight:700;font-size:15px;}
+  .src-tab .sd{font-size:13px;color:var(--text-dim);font-style:italic;margin-top:2px;}
+
+  .field{display:flex;flex-direction:column;gap:7px;}
+  .g2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .g2 .full{grid-column:1/-1;}
+  @media(max-width:560px){.g2{grid-template-columns:1fr;}}
+  label{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--gold-dim);}
+  input,select{background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:13px;padding:11px 13px;outline:none;transition:border-color 0.2s;width:100%;}
+  input:focus,select:focus{border-color:var(--gold);}
+  select option{background:var(--surface2);}
+
+  .drop{border:2px dashed var(--border);border-radius:8px;padding:28px;text-align:center;cursor:pointer;transition:all 0.3s;background:var(--bg);position:relative;}
+  .drop:hover,.drop.drag{border-color:var(--gold);background:rgba(212,168,83,0.04);}
+  .drop input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+  .drop-icon{font-size:28px;margin-bottom:6px;}
+  .drop-text{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text-dim);}
+  .fstat{font-family:'JetBrains Mono',monospace;font-size:12px;margin-top:8px;display:none;}
+  .fstat.show{display:block;}
+  .fstat.ok{color:var(--green);} .fstat.err{color:var(--red);}
+
+  .hint{background:rgba(212,168,83,0.05);border:1px solid var(--gold-dim);border-radius:8px;padding:11px 15px;margin-top:14px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--gold-dim);}
+
+  .btn{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:1px;padding:12px 22px;border:none;border-radius:6px;cursor:pointer;transition:all 0.2s;text-transform:uppercase;}
+  .btn-p{background:var(--gold);color:#0c0b0f;font-weight:600;}
+  .btn-p:hover:not(:disabled){background:var(--amber);transform:translateY(-1px);}
+  .btn-p:disabled{opacity:0.45;cursor:not-allowed;}
+  .btn-g{background:transparent;color:var(--text-dim);border:1px solid var(--border);}
+  .btn-g:hover{border-color:var(--gold);color:var(--gold);}
+  .btn-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+
+  .scores{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;animation:fadeUp 0.6s ease;}
+  .sc{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;text-align:center;}
+  .sn{font-family:'Playfair Display',serif;font-size:30px;font-weight:900;color:var(--gold);line-height:1;}
+  .sl{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--text-muted);margin-top:4px;}
+  .prog{height:3px;background:var(--border);border-radius:2px;margin-bottom:20px;overflow:hidden;}
+  .prog-f{height:100%;background:linear-gradient(90deg,var(--gold),var(--amber));transition:width 0.5s;width:0%;}
+
+  .stabs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;animation:fadeUp 0.7s ease;}
+  .stab{background:var(--surface);border:2px solid var(--border);border-radius:10px;padding:18px 12px;cursor:pointer;transition:all 0.25s;text-align:center;}
+  .stab:hover{border-color:var(--gold-dim);}
+  .stab.on{border-color:var(--gold);background:var(--surface2);}
+  .stab .ti{font-size:24px;margin-bottom:6px;}
+  .stab .tn{font-family:'Playfair Display',serif;font-weight:700;font-size:15px;}
+  .stab .td{font-size:13px;color:var(--text-dim);font-style:italic;margin-top:2px;}
+
+  .chatbox{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;animation:fadeUp 0.8s ease;}
+  .ctoolbar{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--surface2);flex-wrap:wrap;gap:8px;}
+  .cmode{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--gold);display:flex;align-items:center;gap:8px;}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;}
+  .dot.thinking{background:var(--gold);}
+  .dot.idle{background:var(--text-muted);animation:none;}
+  .tright{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+
+  .msgs{height:460px;overflow-y:auto;padding:22px;display:flex;flex-direction:column;gap:18px;scroll-behavior:smooth;}
+  .msgs::-webkit-scrollbar{width:4px;}
+  .msgs::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+
+  .msg{display:flex;gap:13px;animation:fadeUp 0.35s ease;}
+  .av{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;margin-top:2px;}
+  .msg.ai .av{background:rgba(212,168,83,0.12);border:1px solid var(--gold-dim);}
+  .msg.user .av{background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.4);}
+  .msg.sys .av{background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.3);}
+  .mb{flex:1;}
+  .mr{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);margin-bottom:5px;}
+  .msg.ai .mr{color:var(--gold-dim);} .msg.user .mr{color:rgba(96,165,250,0.6);}
+  .mt{font-size:17px;line-height:1.75;color:var(--text);}
+  .mt code{font-family:'JetBrains Mono',monospace;font-size:13px;background:var(--bg);border:1px solid var(--border);padding:2px 6px;border-radius:3px;color:var(--amber);}
+  .mt pre{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:14px;margin:10px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--amber);line-height:1.6;}
+
+  .sbadge{display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:12px;padding:3px 10px;border-radius:4px;margin-top:7px;}
+  .sbadge.correct{background:rgba(74,222,128,0.1);color:var(--green);border:1px solid rgba(74,222,128,0.3);}
+  .sbadge.wrong{background:rgba(248,113,113,0.1);color:var(--red);border:1px solid rgba(248,113,113,0.3);}
+  .sbadge.partial{background:rgba(240,165,0,0.1);color:var(--amber);border:1px solid rgba(240,165,0,0.3);}
+
+  .cinput{border-top:1px solid var(--border);padding:14px 18px;background:var(--surface2);}
+  .tbox{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text-dim);background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:9px 13px;margin-bottom:10px;min-height:40px;font-style:italic;display:none;}
+  .tbox.show{display:block;}
+  .tbox.live{border-color:var(--red);color:var(--text);}
+  .irow{display:flex;gap:10px;align-items:flex-end;}
+  .irow textarea{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'Crimson Pro',serif;font-size:17px;padding:11px 13px;outline:none;height:50px;resize:none;transition:border-color 0.2s;line-height:1.4;}
+  .irow textarea:focus{border-color:var(--gold);}
+  .micbtn{width:52px;height:52px;border-radius:50%;background:var(--surface);border:2px solid var(--border);color:var(--text-dim);font-size:20px;cursor:pointer;transition:all 0.3s;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .micbtn:hover{border-color:var(--gold);color:var(--gold);}
+  .micbtn.rec{border-color:var(--red);background:rgba(248,113,113,0.12);color:var(--red);animation:pulse 0.8s infinite;}
+
+  .qacts{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;}
+  .hidden{display:none!important;}
+
+  @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes fadeDown{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.45}}
+  @keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-6px)}}
+  .tdots{display:flex;gap:4px;align-items:center;padding:4px 0;}
+  .tdots span{width:6px;height:6px;border-radius:50%;background:var(--gold-dim);animation:bounce 1.2s infinite;}
+  .tdots span:nth-child(2){animation-delay:0.2s;}
+  .tdots span:nth-child(3){animation-delay:0.4s;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="header">
+    <div class="badge">AI Study Agent v2.0</div>
+    <h1>Study<span>Agent</span></h1>
+    <p class="header-sub">Feynman Technique · Active Recall · Verbal Assessment · WAEC Curriculum</p>
+  </div>
+
+  <!-- SETUP -->
+  <div class="panel" id="setupPanel">
+    <div class="api-setup">
+      <h3>⚠️ API Key Required</h3>
+      <p>Get a free API key from <a href="https://openrouter.ai/keys" target="_blank">OpenRouter.ai</a>. Free tier includes credits for testing.</p>
+      <div class="field">
+        <label>OpenRouter API Key</label>
+        <input type="password" id="apiKey" placeholder="sk-or-v1-..." oninput="chkReady()">
+      </div>
+      <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">🔒 Your key stays in your browser only. Never shared.</p>
+    </div>
+
+    <div class="src-tabs">
+      <div class="src-tab on" id="stPDF" onclick="setSrc('pdf')">
+        <div class="si">📄</div>
+        <div class="sn">My PDF</div>
+        <div class="sd">Upload your own notes</div>
+      </div>
+      <div class="src-tab" id="stWAEC" onclick="setSrc('waec')">
+        <div class="si">🇬🇭</div>
+        <div class="sn">WAEC Curriculum</div>
+        <div class="sd">No PDF needed</div>
+      </div>
+    </div>
+
+    <div id="pdfPanel">
+      <div class="field" style="margin-bottom:14px">
+        <label>Upload PDF or Text File</label>
+        <div class="drop" id="dropZone">
+          <input type="file" id="fileIn" accept=".pdf,.txt">
+          <div class="drop-icon">📄</div>
+          <div class="drop-text">Drop your file here or click to browse</div>
+        </div>
+        <div class="fstat" id="fstat"></div>
+      </div>
+      <div class="field">
+        <label>Topic Focus (optional)</label>
+        <input type="text" id="pdfTopic" placeholder="e.g. Data Structures, OOP, Cell Biology...">
+      </div>
+    </div>
+
+    <div id="waecPanel" class="hidden">
+      <div class="g2">
+        <div class="field">
+          <label>Subject</label>
+          <select id="wSubject" onchange="onSubj()">
+            <option value="">— Select Subject —</option>
+            <optgroup label="Sciences">
+              <option>Core Mathematics</option><option>Elective Mathematics</option>
+              <option>Integrated Science</option><option>Elective Physics</option>
+              <option>Elective Chemistry</option><option>Elective Biology</option>
+            </optgroup>
+            <optgroup label="Computing">
+              <option>ICT</option><option>Computer Science</option>
+            </optgroup>
+            <optgroup label="Languages">
+              <option>English Language</option><option>Literature in English</option><option>French</option>
+            </optgroup>
+            <optgroup label="Business">
+              <option>Business Management</option><option>Financial Accounting</option><option>Economics</option>
+            </optgroup>
+            <optgroup label="Humanities">
+              <option>History</option><option>Government</option><option>Geography</option><option>Social Studies</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="field">
+          <label>Topic</label>
+          <select id="wTopic"><option value="">— All topics —</option></select>
+        </div>
+        <div class="field">
+          <label>Level</label>
+          <select id="wLevel">
+            <option value="SHS1">SHS 1 — Year 1</option>
+            <option value="SHS2" selected>SHS 2 — Year 2</option>
+            <option value="SHS3">SHS 3 — WASSCE Prep</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Custom Topic (overrides above)</label>
+          <input type="text" id="wCustom" placeholder="e.g. Quadratic equations, Ohm's Law..." oninput="chkReady()">
+        </div>
+      </div>
+      <div class="hint">🇬🇭 WAEC Gold Standard — GES syllabus · past questions · official marking schemes</div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-p" id="startBtn" onclick="beginSession()" disabled>Begin Study Session →</button>
+    </div>
+  </div>
+
+  <!-- SESSION -->
+  <div id="session" class="hidden">
+    <div class="scores">
+      <div class="sc"><div class="sn" id="sc0">0</div><div class="sl">Correct</div></div>
+      <div class="sc"><div class="sn" id="sc1" style="color:var(--red)">0</div><div class="sl">Wrong</div></div>
+      <div class="sc"><div class="sn" id="sc2">0</div><div class="sl">Asked</div></div>
+      <div class="sc"><div class="sn" id="sc3" style="color:var(--green)">—</div><div class="sl">Accuracy</div></div>
+    </div>
+    <div class="prog"><div class="prog-f" id="progF"></div></div>
+
+    <div class="stabs">
+      <div class="stab on" id="sm-feynman" onclick="setStudyMode('feynman')">
+        <div class="ti">🧠</div><div class="tn">Feynman</div><div class="td">Teach it back</div>
+      </div>
+      <div class="stab" id="sm-recall" onclick="setStudyMode('recall')">
+        <div class="ti">⚡</div><div class="tn">Active Recall</div><div class="td">Q&amp;A drilling</div>
+      </div>
+      <div class="stab" id="sm-test" onclick="setStudyMode('test')">
+        <div class="ti">💻</div><div class="tn">Exam Mode</div><div class="td">Past-style questions</div>
+      </div>
+    </div>
+
+    <div class="chatbox">
+      <div class="ctoolbar">
+        <div class="cmode">
+          <div class="dot idle" id="dotEl"></div>
+          <span id="modeLabel">FEYNMAN MODE</span>
+        </div>
+        <div class="tright">
+          <button class="btn btn-g" id="vBtn" onclick="togVoice()" style="padding:6px 12px;font-size:11px">🔊 Voice ON</button>
+          <select id="vSel" style="padding:6px 10px;font-size:11px;max-width:140px;cursor:pointer"></select>
+          <button class="btn btn-g" onclick="stopSpeak()" style="padding:6px 12px;font-size:11px">⏹</button>
+          <button class="btn btn-g" onclick="resetChat()" style="padding:6px 12px;font-size:11px">↺ Reset</button>
+        </div>
+      </div>
+
+      <div class="msgs" id="msgs"></div>
+
+      <div class="cinput">
+        <div class="tbox" id="tbox"></div>
+        <div class="irow">
+          <textarea id="txtIn" placeholder="Type your answer, or tap the mic to speak..." onkeydown="onKey(event)"></textarea>
+          <button class="micbtn" id="micBtn" onclick="togMic()">🎤</button>
+          <button class="btn btn-p" onclick="submit()" style="height:50px;padding:0 18px">Send</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="qacts">
+      <button class="btn btn-g" onclick="nextQ()">Next →</button>
+      <button class="btn btn-g" onclick="doSummary()">📋 Summary</button>
+      <button class="btn btn-g" onclick="doWeak()">⚠️ Weak Areas</button>
+    </div>
+  </div>
+
+</div>
+<script>
+// CORS proxy alternatives for Neocities
+const CORS_PROXIES = [
+  "https://api.allorigins.win/raw?url=",
+  "https://corsproxy.io/?",
+  "" // Direct (for local testing)
+];
+let currentProxyIndex = 0;
+
+const BASE_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const M_PDF     = "arcee-ai/trinity-large-preview:free";
+const M_WAEC    = "openai/gpt-oss-120b:free";
+
+let apiKey    = "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";
+let src       = "pdf";
+let sMode     = "feynman";
+let pdfText   = "";
+let wCtx      = {};
+let hist      = [];
+let score     = {c:0,w:0,t:0};
+let waiting   = false;
+let recording = false;
+let recog     = null;
+let liveT     = "";
+let vOn       = true;
+let vList     = [];
+let vChosen   = null;
+let vPlaying  = false;
+let vQ        = [];
+let thN       = 0;
+
+const WTOPICS = {
+  "Core Mathematics":["Number & Numeration","Algebraic Expressions","Linear & Quadratic Equations","Sets","Plane Geometry","Mensuration","Trigonometry","Statistics & Probability","Vectors","Matrices"],
+  "Elective Mathematics":["Algebra","Coordinate Geometry","Differentiation","Integration","Statistics","Probability","Vectors","Matrices","Complex Numbers","Numerical Methods"],
+  "Integrated Science":["Scientific Method","Cell Biology","Human Body Systems","Ecosystems","Atomic Structure","Forces & Motion","Energy","Waves","Chemical Reactions","Genetics"],
+  "Elective Physics":["Mechanics","Thermal Physics","Waves","Optics","Electricity & Magnetism","Atomic & Nuclear Physics","Electronics","Fields"],
+  "Elective Chemistry":["Atomic Structure","Chemical Bonding","States of Matter","Acids Bases & Salts","Electrochemistry","Organic Chemistry","Kinetics & Equilibrium","Thermochemistry","Periodicity"],
+  "Elective Biology":["Cell Biology","Genetics & Heredity","Evolution","Human Nutrition","Transport Systems","Excretion","Reproduction","Ecology","Biotechnology","Immunity"],
+  "ICT":["Computer Hardware","Operating Systems","Word Processing","Spreadsheets","Databases","Presentation","Internet & Email","Programming Basics","Networking","Cybersecurity"],
+  "Computer Science":["Algorithms","Data Types","Control Structures","Functions","Arrays","OOP","File Handling","Databases","Networks","Software Development"],
+  "English Language":["Reading Comprehension","Summary Writing","Argumentative Essay","Oral English","Lexis & Structure","Letter Writing","Report Writing","Narrative Essay","Descriptive Essay"],
+  "Economics":["Basic Economics","Supply & Demand","Market Structures","National Income","Money & Banking","International Trade","Public Finance","Economic Development"],
+  "Financial Accounting":["Bookkeeping","Trial Balance","Final Accounts","Bank Reconciliation","Depreciation","Partnership Accounts","Companies","Cash Flow","Ratio Analysis"],
+  "Business Management":["Business Formation","Management","Human Resources","Marketing","Finance","Communication","Entrepreneurship","E-Commerce"],
+  "Geography":["Map Reading","Climatology","Geomorphology","Hydrology","Population","Agriculture","Industry","Settlement","Environment"],
+  "History":["Pre-Colonial Ghana","Colonial Period","Independence","Post-Independence","West African History","World History"],
+  "Government":["Concept of Government","Constitutional Development","Organs of Government","Electoral Systems","Political Parties","Human Rights"],
+  "Social Studies":["Individual & Society","Culture","Democracy","Economic Development","Population","Environment"],
+  "Literature in English":["Prose","Poetry","Drama","Literary Devices","Themes & Characterisation"],
+  "French":["Grammar","Vocabulary","Reading Comprehension","Oral French","Letter Writing"]
+};
+
+// Load API key from localStorage
+window.addEventListener('load', () => {
+  // Pre-fill with embedded API key
+  document.getElementById('apiKey').value = apiKey;
+  // Hide the API setup warning since key is embedded
+  document.querySelector('.api-setup').style.display = 'none';
+  const saved = localStorage.getItem('studyagent_apikey');
+  if (saved) {
+    document.getElementById('apiKey').value = saved;
+    apiKey = saved;
+  }
+  chkReady();
+});
+
+// ── SOURCE TABS ──────────────────────────────────
+function setSrc(s) {
+  src = s;
+  document.getElementById('stPDF').classList.toggle('on', s==='pdf');
+  document.getElementById('stWAEC').classList.toggle('on', s==='waec');
+  document.getElementById('pdfPanel').classList.toggle('hidden', s!=='pdf');
+  document.getElementById('waecPanel').classList.toggle('hidden', s!=='waec');
+  chkReady();
+}
+
+function onSubj() {
+  const subj = document.getElementById('wSubject').value;
+  const sel  = document.getElementById('wTopic');
+  sel.innerHTML = '<option value="">— All topics —</option>';
+  (WTOPICS[subj]||[]).forEach(t => {
+    const o = document.createElement('option');
+    o.value = t; o.textContent = t; sel.appendChild(o);
+  });
+  chkReady();
+}
+
+function chkReady() {
+  apiKey = document.getElementById('apiKey').value.trim();
+  if (apiKey) localStorage.setItem('studyagent_apikey', apiKey);
+  
+  let contentReady = false;
+  if (src === 'waec') {
+    contentReady = document.getElementById('wSubject').value || document.getElementById('wCustom').value.trim();
+  } else {
+    contentReady = pdfText.length > 0;
+  }
+  
+  document.getElementById('startBtn').disabled = !apiKey || !contentReady;
+}
+
+// ── PDF LOADING ───────────────────────────────────
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+document.getElementById('fileIn').addEventListener('change', function() {
+  if (this.files[0]) loadFile(this.files[0]);
+});
+
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag');
+  if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+
+async function loadFile(file) {
+  const s = document.getElementById('fstat');
+  s.className = 'fstat show'; s.textContent = '⏳ Loading ' + file.name + '...';
+  try {
+    if (file.name.toLowerCase().endsWith('.pdf')) {
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+      let text = '';
+      for (let i = 1; i <= Math.min(pdf.numPages, 40); i++) {
+        const pg = await pdf.getPage(i);
+        const ct = await pg.getTextContent();
+        text += ct.items.map(x => x.str).join(' ') + '\n';
+      }
+      pdfText = text.trim().slice(0, 24000);
+      s.className = 'fstat show ok';
+      s.textContent = '✅ ' + file.name + ' — ' + pdf.numPages + ' pages (' + pdfText.length + ' chars)';
+    } else {
+      pdfText = (await file.text()).slice(0, 24000);
+      s.className = 'fstat show ok';
+      s.textContent = '✅ ' + file.name + ' (' + pdfText.length + ' chars)';
+    }
+    chkReady();
+  } catch(err) {
+    s.className = 'fstat show err';
+    s.textContent = '❌ ' + err.message;
+  }
+}
+
+// ── SESSION ───────────────────────────────────────
+function beginSession() {
+  if (src === 'waec') {
+    wCtx = {
+      subject: document.getElementById('wSubject').value || 'General Studies',
+      topic:   document.getElementById('wCustom').value.trim() || document.getElementById('wTopic').value || 'all topics',
+      level:   document.getElementById('wLevel').value
+    };
+  }
+  document.getElementById('setupPanel').classList.add('hidden');
+  document.getElementById('session').classList.remove('hidden');
+
+  hist = [{ role:'system', content: buildSys('feynman') }];
+  const banner = src === 'waec'
+    ? '🇬🇭 WAEC Mode — ' + wCtx.subject + ' · ' + wCtx.topic + ' · ' + wCtx.level
+    : '📄 PDF Mode — material loaded';
+  addMsg('sys', banner + '. Feynman Mode. Strictly graded.');
+  callAI("Start by explaining the most important concept in very simple language suitable for a Ghana SHS student. Then ask me to explain it back in my own words. Be specific about what you want me to explain.");
+}
+
+function buildSys(mode) {
+  const mat = src === 'waec'
+    ? 'WAEC GHANA CURRICULUM\nSubject: ' + wCtx.subject + '\nTopic: ' + wCtx.topic + '\nLevel: ' + wCtx.level + '\n\nTeach from the official Ghana Education Service (GES) WAEC/WASSCE syllabus.\nDraw from past WAEC/WASSCE questions and marking schemes for Ghana.\nUse Ghana-specific examples. Adjust difficulty for ' + wCtx.level + ' students.'
+    : 'STUDY MATERIAL:\n---\n' + pdfText.slice(0,8000) + '\n---';
+
+  const mInst = {
+    feynman: '\nMODE: FEYNMAN\n- Explain a concept simply (as if to a 14-year-old)\n- Ask student to explain it back\n- Grade 0-10. Score < 7 = re-teach then re-test\n- Only advance when score ≥ 7/10',
+    recall:  '\nMODE: ACTIVE RECALL\n- Ask direct specific questions\n- Vague answers = WRONG\n- Mix definitions, comparisons, examples',
+    test:    '\nMODE: EXAM QUESTIONS\n- Generate realistic WAEC-style exam questions\n- Mix: multiple choice (A-D), short answer, structured\n- Mark strictly with partial marks'
+  };
+
+  return 'You are a strict expert AI tutor. Help the student deeply understand their material.\n\n' + mat + '\n\nSTRICT RULES:\n- Grade every answer: CORRECT, PARTIALLY CORRECT, or WRONG — always explicitly\n- Give [SCORE: X/10] after every answer\n- Wrong: explain why, give correct answer, follow-up question\n- Correct: affirm briefly, go deeper\n- Always end with a question or instruction\n- No fluff' + (mInst[mode] || mInst.feynman);
+}
+
+// ── STUDY MODE SWITCH ─────────────────────────────
+function setStudyMode(m) {
+  sMode = m;
+  ['feynman','recall','test'].forEach(x => {
+    document.getElementById('sm-'+x).classList.toggle('on', x === m);
+  });
+  const L = {feynman:'FEYNMAN MODE', recall:'ACTIVE RECALL', test:'EXAM MODE'};
+  document.getElementById('modeLabel').textContent = L[m];
+  hist[0] = { role:'system', content: buildSys(m) };
+  addMsg('sys', '🔄 Switched to ' + L[m]);
+  const P = {
+    feynman: 'Switch to Feynman. Pick a key concept and explain it simply, then ask me to explain it back.',
+    recall:  'Switch to Active Recall. Ask me a direct specific question about the material.',
+    test:    'Switch to Exam Mode. Generate a realistic exam question.'
+  };
+  callAI(P[m]);
+}
+
+// ── AI CALL ───────────────────────────────────────
+async function callAI(userMsg) {
+  if (!apiKey) {
+    addMsg('ai', '❌ Please enter your OpenRouter API key in the setup panel.');
+    return;
+  }
+  
+  if (userMsg) hist.push({role:'user', content: userMsg});
+  setDot('thinking');
+  const tid = mkThinking();
+  
+  // Try with current proxy, fallback to next if fails
+  for (let attempt = 0; attempt < CORS_PROXIES.length; attempt++) {
+    try {
+      const proxy = CORS_PROXIES[currentProxyIndex];
+      const url = proxy ? proxy + encodeURIComponent(BASE_API_URL) : BASE_API_URL;
+      
+      const model = src === 'waec' ? M_WAEC : M_PDF;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + apiKey,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': window.location.origin,
+          'X-Title': 'StudyAgent'
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: hist,
+          max_tokens: 1024,
+          temperature: 0.4
+        })
+      });
+      
+      rmThinking(tid);
+      
+      if (!res.ok) {
+        let errorMsg = 'API Error ' + res.status;
+        try {
+          const errorData = await res.json();
+          errorMsg += ': ' + (errorData.error?.message || res.statusText);
+          if (res.status === 401) {
+            errorMsg += '\n\n🔑 Check your API key at https://openrouter.ai/keys';
+          }
+        } catch(e) {
+          errorMsg += ': ' + res.statusText;
+        }
+        
+        // Try next proxy on error
+        if (attempt < CORS_PROXIES.length - 1) {
+          currentProxyIndex = (currentProxyIndex + 1) % CORS_PROXIES.length;
+          continue;
+        }
+        
+        addMsg('ai', '❌ ' + errorMsg);
+        setDot('idle');
+        return;
+      }
+      
+      const data = await res.json();
+      const reply = data.choices?.[0]?.message?.content || '(empty response)';
+      hist.push({role:'assistant', content: reply});
+
+      const isC = /\bCORRECT\b/i.test(reply) && !/PARTIALLY CORRECT/i.test(reply) && !/NOT CORRECT/i.test(reply);
+      const isW = /\b(WRONG|INCORRECT)\b/i.test(reply);
+      const isP = /PARTIALLY CORRECT/i.test(reply);
+      if (waiting && (isC || isW || isP)) {
+        if (isC) score.c++; else if (isW) score.w++; else { score.c+=0.5; score.w+=0.5; }
+        score.t++;
+        updScores();
+        waiting = false;
+      }
+      addMsg('ai', reply);
+      doSpeak(reply);
+      setDot('ready');
+      waiting = true;
+      return; // Success!
+      
+    } catch(err) {
+      // Try next proxy
+      if (attempt < CORS_PROXIES.length - 1) {
+        currentProxyIndex = (currentProxyIndex + 1) % CORS_PROXIES.length;
+        continue;
+      }
+      
+      rmThinking(tid);
+      addMsg('ai', '❌ Network error: ' + err.message + '\n\n🌐 CORS issue detected. This may not work on Neocities.\n\n💡 Try: Download this HTML file and open it locally, or host on GitHub Pages instead.');
+      setDot('idle');
+    }
+  }
+}
+
+// ── SUBMIT ────────────────────────────────────────
+function submit() {
+  const t = document.getElementById('txtIn');
+  const ans = t.value.trim() || liveT.trim();
+  if (!ans) return;
+  addMsg('user', ans);
+  t.value = ''; liveT = '';
+  const tb = document.getElementById('tbox');
+  tb.className = 'tbox'; tb.textContent = '';
+  callAI(ans);
+}
+
+function onKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+}
+
+// ── MIC ───────────────────────────────────────────
+function togMic() { recording ? stopMic() : startMic(); }
+
+function startMic() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { alert('Speech recognition needs Chrome/Edge browser.'); return; }
+  stopSpeak();
+  recog = new SR();
+  recog.continuous = true; recog.interimResults = true; recog.lang = 'en-US';
+  liveT = '';
+  recog.onresult = e => {
+    let fin = '', int = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) fin += e.results[i][0].transcript;
+      else int += e.results[i][0].transcript;
+    }
+    liveT += fin;
+    const tb = document.getElementById('tbox');
+    tb.className = 'tbox show live';
+    tb.textContent = liveT + (int ? ' ' + int + '...' : '');
+    document.getElementById('txtIn').value = liveT + (int ? ' ' + int : '');
+  };
+  recog.onerror = () => stopMic();
+  recog.onend   = () => { if (recording) recog.start(); };
+  recog.start();
+  recording = true;
+  const b = document.getElementById('micBtn');
+  b.classList.add('rec'); b.textContent = '⏹';
+}
+
+function stopMic() {
+  recording = false;
+  if (recog) { recog.stop(); recog = null; }
+  const b = document.getElementById('micBtn');
+  b.classList.remove('rec'); b.textContent = '🎤';
+  const tb = document.getElementById('tbox');
+  tb.classList.remove('live');
+  if (liveT) { tb.className = 'tbox show'; tb.textContent = '📝 ' + liveT; }
+  else tb.className = 'tbox';
+}
+
+// ── VOICE TTS ─────────────────────────────────────
+function loadVoices() {
+  const all = window.speechSynthesis.getVoices();
+  if (!all.length) return;
+  vList = all.filter(v => v.lang.startsWith('en'));
+  if (!vList.length) vList = all;
+  vList.sort((a,b) => {
+    return ((b.name.includes('Google')||b.name.includes('Neural'))?0:1) - ((a.name.includes('Google')||a.name.includes('Neural'))?0:1);
+  });
+  const sel = document.getElementById('vSel');
+  sel.innerHTML = '';
+  vList.forEach((v,i) => {
+    const o = document.createElement('option');
+    o.value = i;
+    o.textContent = v.name.replace('Microsoft ','').replace(' Online (Natural)',' ✨').slice(0,22);
+    sel.appendChild(o);
+  });
+  const gi = vList.findIndex(v => v.name.includes('Google'));
+  sel.value = gi >= 0 ? gi : 0;
+  vChosen = vList[parseInt(sel.value)];
+  sel.onchange = () => { vChosen = vList[parseInt(sel.value)]; stopSpeak(); };
+}
+window.speechSynthesis.onvoiceschanged = loadVoices;
+setTimeout(loadVoices, 600);
+
+function togVoice() {
+  vOn = !vOn;
+  document.getElementById('vBtn').textContent = vOn ? '🔊 Voice ON' : '🔇 Voice OFF';
+  if (!vOn) stopSpeak();
+}
+
+function stopSpeak() {
+  window.speechSynthesis.cancel();
+  vQ = []; vPlaying = false;
+}
+
+function doSpeak(raw) {
+  if (!vOn) return;
+  const clean = raw
+    .replace(/```[\s\S]*?```/g,'code block.')
+    .replace(/`[^`]+`/g,'')
+    .replace(/\[SCORE:[^\]]+\]/gi,'')
+    .replace(/\*\*(.*?)\*\*/g,'$1')
+    .replace(/<[^>]+>/g,'')
+    .replace(/\n+/g,'. ')
+    .replace(/\.{2,}/g,'.')
+    .trim();
+  const sentences = clean.match(/[^.!?]+[.!?]+/g) || [clean];
+  sentences.forEach(s => { if (s.trim().length > 3) vQ.push(s.trim()); });
+  if (!vPlaying) pumpQ();
+}
+
+function pumpQ() {
+  if (!vQ.length) { vPlaying = false; return; }
+  vPlaying = true;
+  const utt = new SpeechSynthesisUtterance(vQ.shift());
+  if (vChosen) utt.voice = vChosen;
+  utt.rate = 0.95; utt.pitch = 1.0; utt.volume = 1.0;
+  let ka = setInterval(() => {
+    if (!vPlaying){clearInterval(ka);return;}
+    window.speechSynthesis.pause();
+    window.speechSynthesis.resume();
+  }, 10000);
+  utt.onend  = () => { clearInterval(ka); pumpQ(); };
+  utt.onerror= () => { clearInterval(ka); pumpQ(); };
+  window.speechSynthesis.speak(utt);
+}
+
+// ── UI HELPERS ────────────────────────────────────
+function addMsg(role, text) {
+  const c = document.getElementById('msgs');
+  const d = document.createElement('div');
+  d.className = 'msg ' + role;
+  const avMap  = {ai:'🎓', user:'👤', sys:'⚙️'};
+  const lblMap = {ai:'StudyAgent', user:'You', sys:'System'};
+
+  let badge = '';
+  const sm = text.match(/\[SCORE:\s*(\d+)\/10\]/i);
+  if (sm) {
+    const n = parseInt(sm[1]);
+    const cl = n>=7?'correct':n>=4?'partial':'wrong';
+    badge = '<div class="sbadge '+cl+'">'+(n>=7?'✅':n>=4?'⚡':'❌')+' Score: '+n+'/10</div>';
+  } else if (/PARTIALLY CORRECT/i.test(text)) {
+    badge = '<div class="sbadge partial">⚡ Partially Correct</div>';
+  } else if (/\bCORRECT\b/i.test(text) && !/PARTIALLY|NOT CORRECT/i.test(text)) {
+    badge = '<div class="sbadge correct">✅ Correct</div>';
+  } else if (/\b(WRONG|INCORRECT)\b/i.test(text)) {
+    badge = '<div class="sbadge wrong">❌ Wrong</div>';
+  }
+
+  let html = text
+    .replace(/```(\w*)\n?([\s\S]*?)```/g, (_,l,code) => '<pre>'+esc(code.trim())+'</pre>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\n/g, '<br>');
+
+  d.innerHTML = '<div class="av">'+(avMap[role]||'🤖')+'</div><div class="mb"><div class="mr">'+(lblMap[role]||role)+'</div><div class="mt">'+html+'</div>'+badge+'</div>';
+  c.appendChild(d);
+  c.scrollTop = c.scrollHeight;
+}
+
+function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function mkThinking() {
+  const id = ++thN;
+  const c = document.getElementById('msgs');
+  const d = document.createElement('div');
+  d.className = 'msg ai'; d.id = 'th'+id;
+  d.innerHTML = '<div class="av">🎓</div><div class="mb"><div class="mr">StudyAgent</div><div class="tdots"><span></span><span></span><span></span></div></div>';
+  c.appendChild(d); c.scrollTop = c.scrollHeight;
+  return id;
+}
+function rmThinking(id){ const e=document.getElementById('th'+id); if(e) e.remove(); }
+
+function setDot(s) {
+  const d = document.getElementById('dotEl');
+  d.className = 'dot';
+  if (s==='thinking') d.classList.add('thinking');
+  else if (s==='idle') d.classList.add('idle');
+}
+
+function updScores() {
+  document.getElementById('sc0').textContent = Math.floor(score.c);
+  document.getElementById('sc1').textContent = Math.floor(score.w);
+  document.getElementById('sc2').textContent = score.t;
+  if (score.t > 0) {
+    const p = Math.round((score.c/score.t)*100);
+    document.getElementById('sc3').textContent = p+'%';
+    document.getElementById('progF').style.width = p+'%';
+  }
+}
+
+// ── QUICK ACTIONS ─────────────────────────────────
+function nextQ() {
+  addMsg('user','→ Next question please');
+  const P = {feynman:'Pick a new concept. Explain simply, ask me to explain back.', recall:'Ask a new specific question.', test:'Generate a new exam question.'};
+  callAI(P[sMode]);
+}
+function doSummary() {
+  addMsg('user','→ Give me a progress summary');
+  callAI("Summarise what I understand well and what I am weak on. Be specific and honest.");
+}
+function doWeak() {
+  addMsg('user','→ What are my weak areas?');
+  callAI("Based on my answers, identify my 2-3 weakest areas and exactly what I should review.");
+}
+function resetChat() {
+  if (!confirm('Reset session?')) return;
+  score = {c:0,w:0,t:0}; updScores();
+  document.getElementById('progF').style.width='0%';
+  document.getElementById('msgs').innerHTML = '';
+  hist = [{ role:'system', content: buildSys(sMode) }];
+  addMsg('sys','🔄 Session reset.');
+  callAI("Start fresh. Begin with a key concept from the material.");
+}
+</script>
+</body>
+</html>
