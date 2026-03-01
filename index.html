@@ -555,34 +555,56 @@ function startMic() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) { alert('Speech recognition needs Chrome.'); return; }
   stopSpeak();
-  recog = new SR();
-  recog.continuous = true; recog.interimResults = true; recog.lang = 'en-US';
   liveT = '';
+  recording = true;
+  document.getElementById('micBtn').classList.add('rec');
+  document.getElementById('micBtn').textContent = '⏹';
+  spawnRecog(SR);
+}
+
+function spawnRecog(SR) {
+  if (!recording) return;
+  // Always create a FRESH instance — calling .start() on a stopped instance breaks Chrome
+  recog = new SR();
+  recog.continuous      = true;
+  recog.interimResults  = true;
+  recog.lang            = 'en-US';
+
   recog.onresult = e => {
     let fin = '', int = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
-      if (e.results[i].isFinal) fin += e.results[i][0].transcript;
+      if (e.results[i].isFinal) fin += e.results[i][0].transcript + ' ';
       else int += e.results[i][0].transcript;
     }
     liveT += fin;
     const tb = document.getElementById('tbox');
     tb.className = 'tbox show live';
-    tb.textContent = liveT + (int ? ' ' + int + '...' : '');
-    document.getElementById('txtIn').value = liveT + (int ? ' ' + int : '');
+    tb.textContent = liveT + (int ? int + '...' : '');
+    document.getElementById('txtIn').value = liveT + (int ? int : '');
   };
-  recog.onerror = () => stopMic();
-  recog.onend   = () => { if (recording) recog.start(); };
-  recog.start();
-  recording = true;
-  const b = document.getElementById('micBtn');
-  b.classList.add('rec'); b.textContent = '⏹';
+
+  recog.onerror = e => {
+    // Only fatal errors should stop recording; transient ones just respawn
+    const fatal = ['not-allowed', 'service-not-allowed', 'audio-capture'];
+    if (fatal.includes(e.error)) {
+      stopMic();
+    }
+    // 'no-speech', 'network', 'aborted' etc. → let onend handle the respawn
+  };
+
+  recog.onend = () => {
+    // Chrome auto-stops after silence or ~60s; respawn a fresh instance to continue
+    if (recording) setTimeout(() => spawnRecog(SR), 150);
+  };
+
+  try { recog.start(); } catch(err) { /* ignore start() race on rapid restarts */ }
 }
 
 function stopMic() {
   recording = false;
-  if (recog) { recog.stop(); recog = null; }
-  const b = document.getElementById('micBtn');
-  b.classList.remove('rec'); b.textContent = '🎤';
+  if (recog) { try { recog.stop(); } catch(e) {} recog = null; }
+  document.getElementById('micBtn').classList.remove('rec');
+  document.getElementById('micBtn').textContent = '🎤';
   const tb = document.getElementById('tbox');
   tb.classList.remove('live');
   if (liveT) { tb.className = 'tbox show'; tb.textContent = '📝 ' + liveT; }
