@@ -279,8 +279,10 @@
 
 </div>
 <script>
-const API_KEY  = "csk-rtpk3ce24kwtp4r64w99mf8cerem5fff3v8pf8j2rdyy5y8j";
-const API_URL  = "https://api.cerebras.ai/v1/chat/completions";
+// ── API CONFIG ───────────────────────────────────────────────────────────
+// API key lives in the Cloudflare Worker (cerebras-proxy-worker.js) — not here.
+// Replace the URL below with YOUR Worker URL after deploying.
+const API_URL  = "https://aitutor.techkid3692.workers.dev/";
 const M_FAST   = "llama3.1-8b";
 const M_REASON = "qwen-3-235b-a22b-instruct-2507";
 const M_POLISH = "gpt-oss-120b";
@@ -495,7 +497,6 @@ async function callAI(userMsg) {
     const res = await fetch(API_URL, {
       method: 'POST',
       headers: {
-        'Authorization': 'Bearer ' + API_KEY,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({model, messages: hist, max_completion_tokens:1024, temperature:0.2, top_p:1, stream:false})
