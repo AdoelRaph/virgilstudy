@@ -120,6 +120,7 @@
   .qacts{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;}
   .hidden{display:none!important;}
 
+  .mbadge{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1px;border:1px solid;padding:2px 8px;border-radius:3px;display:inline-block;}
   @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
   @keyframes fadeDown{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.45}}
@@ -247,6 +248,7 @@
         <div class="cmode">
           <div class="dot idle" id="dotEl"></div>
           <span id="modeLabel">FEYNMAN MODE</span>
+          <span id="modelBadge" style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1px;border:1px solid var(--border);padding:2px 8px;border-radius:3px;color:var(--gold);margin-left:4px;">⚡ Llama 3.1 8B</span>
         </div>
         <div class="tright">
           <button class="btn btn-g" id="vBtn" onclick="togVoice()" style="padding:6px 12px;font-size:11px">🔊 Voice ON</button>
@@ -277,10 +279,16 @@
 
 </div>
 <script>
-const API_KEY = "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";
-const API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const M_PDF   = "arcee-ai/trinity-large-preview:free";
-const M_WAEC  = "arcee-ai/trinity-large-preview:free";
+const API_KEY  = "csk-rtpk3ce24kwtp4r64w99mf8cerem5fff3v8pf8j2rdyy5y8j";
+const API_URL  = "https://api.cerebras.ai/v1/chat/completions";
+const M_FAST   = "llama3.1-8b";
+const M_REASON = "qwen-3-235b-a22b-instruct-2507";
+const M_POLISH = "gpt-oss-120b";
+const MODEL_META = {
+  [M_FAST]:   { label:"Llama 3.1 8B",  icon:"⚡", color:"#60a5fa" },
+  [M_REASON]: { label:"Qwen 3 235B",   icon:"🧮", color:"#c084fc" },
+  [M_POLISH]: { label:"GPT-OSS 120B",  icon:"✨", color:"#d4a853" }
+};
 
 let src       = "pdf";
 let sMode     = "feynman";
@@ -298,6 +306,7 @@ let vChosen   = null;
 let vPlaying  = false;
 let vQ        = [];
 let thN       = 0;
+let lastModel = M_FAST;
 
 const WTOPICS = {
   "Core Mathematics":["Number & Numeration","Algebraic Expressions","Linear & Quadratic Equations","Sets","Plane Geometry","Mensuration","Trigonometry","Statistics & Probability","Vectors","Matrices"],
@@ -445,20 +454,51 @@ function setStudyMode(m) {
   callAI(P[m]);
 }
 
+// ── MODEL ROUTER ─────────────────────────────────
+function pickModel(userMsg) {
+  const msg  = (userMsg || '').toLowerCase();
+  const subj = (wCtx.subject || '').toLowerCase();
+
+  // GPT-OSS 120B — final polish, summaries, multi-subject, essay
+  if (/summar|weak area|progress|study guide|polish|essay|combine|explain.*with.*example|review all/i.test(msg)) return M_POLISH;
+  if (userMsg === '→ Give me a progress summary' || userMsg === '→ What are my weak areas?') return M_POLISH;
+
+  // Qwen 235B — hard reasoning: exam mode, STEM subjects, keyword match
+  const hardSubjects = ['mathematics','physics','chemistry','economics','financial accounting','computer science','elective'];
+  const isHardSubj = hardSubjects.some(s => subj.includes(s));
+  const isHardMsg  = /calcul|deriv|integr|proof|equation|theorem|algorithm|circuit|force|momentum|energy|logic|vector|matrix|probabilit|statistic|bond|orbital|titrat|kinetic|equilibri|differentiat/i.test(msg);
+  if (sMode === 'test' || isHardSubj || isHardMsg) return M_REASON;
+
+  // Llama 8B — everything else: Feynman explanations, recall, flashcards, general chat
+  return M_FAST;
+}
+
+function updModelBadge(model) {
+  lastModel = model;
+  const m = MODEL_META[model] || MODEL_META[M_FAST];
+  const el = document.getElementById('modelBadge');
+  if (el) {
+    el.textContent = m.icon + ' ' + m.label;
+    el.style.color = m.color;
+    el.style.borderColor = m.color + '55';
+  }
+}
+
 // ── AI CALL ───────────────────────────────────────
 async function callAI(userMsg) {
   if (userMsg) hist.push({role:'user', content: userMsg});
   setDot('thinking');
-  const tid = mkThinking();
+  const model = pickModel(userMsg);
+  updModelBadge(model);
+  const tid = mkThinking(model);
   try {
-    const model = src === 'waec' ? M_WAEC : M_PDF;
     const res = await fetch(API_URL, {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer ' + API_KEY,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({model, messages: hist, max_tokens:1024, temperature:0.4})
+      body: JSON.stringify({model, messages: hist, max_completion_tokens:1024, temperature:0.2, top_p:1, stream:false})
     });
     rmThinking(tid);
     if (!res.ok) {
@@ -470,16 +510,17 @@ async function callAI(userMsg) {
     const reply = data.choices?.[0]?.message?.content || '(empty response)';
     hist.push({role:'assistant', content: reply});
 
+    const wasWaiting = waiting;
     const isC = /\bCORRECT\b/i.test(reply) && !/PARTIALLY CORRECT/i.test(reply) && !/NOT CORRECT/i.test(reply);
     const isW = /\b(WRONG|INCORRECT)\b/i.test(reply);
     const isP = /PARTIALLY CORRECT/i.test(reply);
-    if (waiting && (isC || isW || isP)) {
+    if (wasWaiting && (isC || isW || isP)) {
       if (isC) score.c++; else if (isW) score.w++; else { score.c+=0.5; score.w+=0.5; }
       score.t++;
       updScores();
       waiting = false;
     }
-    addMsg('ai', reply);
+    addMsg('ai', reply, model, wasWaiting);
     doSpeak(reply);
     setDot('ready');
     waiting = true;
@@ -615,46 +656,163 @@ function pumpQ() {
   window.speechSynthesis.speak(utt);
 }
 
-// ── UI HELPERS ────────────────────────────────────
-function addMsg(role, text) {
-  const c = document.getElementById('msgs');
-  const d = document.createElement('div');
-  d.className = 'msg ' + role;
-  const avMap  = {ai:'🎓', user:'👤', sys:'⚙️'};
-  const lblMap = {ai:'StudyAgent', user:'You', sys:'System'};
+// ── MARKDOWN RENDERER ────────────────────────────
+function renderMd(raw) {
+  var PF = "Playfair Display";
+  var JB = "JetBrains Mono";
 
-  let badge = '';
-  const sm = text.match(/\[SCORE:\s*(\d+)\/10\]/i);
-  if (sm) {
-    const n = parseInt(sm[1]);
-    const cl = n>=7?'correct':n>=4?'partial':'wrong';
-    badge = '<div class="sbadge '+cl+'">'+(n>=7?'✅':n>=4?'⚡':'❌')+' Score: '+n+'/10</div>';
-  } else if (/PARTIALLY CORRECT/i.test(text)) {
-    badge = '<div class="sbadge partial">⚡ Partially Correct</div>';
-  } else if (/\bCORRECT\b/i.test(text) && !/PARTIALLY|NOT CORRECT/i.test(text)) {
-    badge = '<div class="sbadge correct">✅ Correct</div>';
-  } else if (/\b(WRONG|INCORRECT)\b/i.test(text)) {
-    badge = '<div class="sbadge wrong">❌ Wrong</div>';
+  // 1. Protect fenced code blocks
+  var blocks = [];
+  var s = raw.replace(/```[\s\S]*?```/g, function(m) {
+    var code = m.replace(/^```\w*\n?/, '').replace(/```$/, '');
+    blocks.push('<pre><code>' + esc(code.trim()) + '</code></pre>');
+    return '%%BLOCK' + (blocks.length - 1) + '%%';
+  });
+
+  // 2. Line-by-line block processing
+  var lines = s.split('\n');
+  var out   = [];
+  var inUL  = false, inOL = false;
+
+  function closeList() {
+    if (inUL) { out.push('</ul>'); inUL = false; }
+    if (inOL) { out.push('</ol>'); inOL = false; }
   }
 
-  let html = text
-    .replace(/```(\w*)\n?([\s\S]*?)```/g, (_,l,code) => '<pre>'+esc(code.trim())+'</pre>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\n/g, '<br>');
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i];
 
-  d.innerHTML = '<div class="av">'+(avMap[role]||'🤖')+'</div><div class="mb"><div class="mr">'+(lblMap[role]||role)+'</div><div class="mt">'+html+'</div>'+badge+'</div>';
+    // Headings
+    if (/^### /.test(l)) {
+      closeList();
+      out.push('<h4 style="font-family:' + PF + ',serif;color:var(--gold);margin:14px 0 4px;font-size:16px;font-weight:700">' + inlineRmd(l.slice(4)) + '</h4>');
+      continue;
+    }
+    if (/^## /.test(l)) {
+      closeList();
+      out.push('<h3 style="font-family:' + PF + ',serif;color:var(--gold);margin:16px 0 6px;font-size:19px;font-weight:700">' + inlineRmd(l.slice(3)) + '</h3>');
+      continue;
+    }
+    if (/^# /.test(l)) {
+      closeList();
+      out.push('<h2 style="font-family:' + PF + ',serif;color:var(--amber);margin:18px 0 8px;font-size:23px;font-weight:900">' + inlineRmd(l.slice(2)) + '</h2>');
+      continue;
+    }
+
+    // Horizontal rule
+    if (/^-{3,}$/.test(l.trim())) {
+      closeList();
+      out.push('<hr style="border:none;border-top:1px solid var(--border);margin:14px 0">');
+      continue;
+    }
+
+    // Blockquote
+    if (/^> /.test(l)) {
+      closeList();
+      out.push('<blockquote style="border-left:3px solid var(--gold-dim);margin:6px 0;padding:4px 12px;color:var(--text-dim);font-style:italic">' + inlineRmd(l.slice(2)) + '</blockquote>');
+      continue;
+    }
+
+    // Unordered list
+    if (/^[-*] /.test(l)) {
+      if (inOL) { out.push('</ol>'); inOL = false; }
+      if (!inUL) { out.push('<ul style="margin:6px 0 6px 22px;line-height:1.9">'); inUL = true; }
+      out.push('<li>' + inlineRmd(l.slice(2)) + '</li>');
+      continue;
+    }
+
+    // Ordered list
+    var olM = l.match(/^(\d+)\. (.+)/);
+    if (olM) {
+      if (inUL) { out.push('</ul>'); inUL = false; }
+      if (!inOL) { out.push('<ol style="margin:6px 0 6px 22px;line-height:1.9">'); inOL = true; }
+      out.push('<li>' + inlineRmd(olM[2]) + '</li>');
+      continue;
+    }
+
+    // Blank line
+    if (l.trim() === '') {
+      closeList();
+      out.push('<div style="height:8px"></div>');
+      continue;
+    }
+
+    // Normal paragraph
+    closeList();
+    out.push('<p style="margin:0 0 3px;line-height:1.8">' + inlineRmd(l) + '</p>');
+  }
+  closeList();
+
+  // 3. Restore code blocks
+  var result = out.join('');
+  for (var j = 0; j < blocks.length; j++) {
+    result = result.replace('%%BLOCK' + j + '%%', blocks[j]);
+  }
+  return result;
+}
+
+function inlineRmd(s) {
+  return s
+    .replace(/`([^`]+)`/g,         '<code style="font-family:JetBrains Mono,monospace;font-size:13px;background:var(--bg);border:1px solid var(--border);padding:2px 5px;border-radius:3px;color:var(--amber)">$1</code>')
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g,     '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g,         '<em>$1</em>')
+    .replace(/__(.+?)__/g,         '<strong>$1</strong>')
+    .replace(/_([^_]+)_/g,         '<em>$1</em>')
+    .replace(/~~(.+?)~~/g,         '<del>$1</del>');
+}
+
+
+// ── UI HELPERS ────────────────────────────────────
+function addMsg(role, text, model, wasWaiting) {
+  var c = document.getElementById('msgs');
+  var d = document.createElement('div');
+  d.className = 'msg ' + role;
+  var avMap  = {ai:'🎓', user:'👤', sys:'⚙️'};
+  var lblMap = {ai:'StudyAgent', user:'You', sys:'System'};
+  var modelTag = (role === 'ai' && model && MODEL_META[model])
+    ? ' <span style="font-size:10px;opacity:0.6;margin-left:6px;color:' + MODEL_META[model].color + '">' + MODEL_META[model].icon + ' ' + MODEL_META[model].label + '</span>'
+    : '';
+
+  // Only show grade badges when grading a real answer
+  var badge = '';
+  if (wasWaiting) {
+    var sm = text.match(/\[SCORE:\s*(\d+)\/10\]/i);
+    if (sm) {
+      var n  = parseInt(sm[1]);
+      var cl = n >= 7 ? 'correct' : n >= 4 ? 'partial' : 'wrong';
+      badge  = '<div class="sbadge ' + cl + '">' + (n >= 7 ? '✅' : n >= 4 ? '⚡' : '❌') + ' Score: ' + n + '/10</div>';
+    } else if (/PARTIALLY CORRECT/i.test(text)) {
+      badge = '<div class="sbadge partial">⚡ Partially Correct</div>';
+    } else if (/\bCORRECT\b/i.test(text) && !/PARTIALLY|NOT CORRECT/i.test(text)) {
+      badge = '<div class="sbadge correct">✅ Correct</div>';
+    } else if (/\b(WRONG|INCORRECT)\b/i.test(text)) {
+      badge = '<div class="sbadge wrong">❌ Wrong</div>';
+    }
+  }
+
+  // Strip [SCORE: X/10] from rendered body
+  var cleanText = text.replace(/\[SCORE:\s*\d+\/10\]/gi, '').trim();
+  var html = (role === 'user')
+    ? cleanText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')
+    : renderMd(cleanText);
+
+  d.innerHTML = '<div class="av">' + (avMap[role] || '🤖') + '</div><div class="mb"><div class="mr">' + (lblMap[role] || role) + (modelTag || '') + '</div><div class="mt">' + html + '</div>' + badge + '</div>';
   c.appendChild(d);
   c.scrollTop = c.scrollHeight;
 }
 
+
 function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-function mkThinking() {
+function mkThinking(model) {
   const id = ++thN;
   const c = document.getElementById('msgs');
   const d = document.createElement('div');
   d.className = 'msg ai'; d.id = 'th'+id;
-  d.innerHTML = '<div class="av">🎓</div><div class="mb"><div class="mr">StudyAgent</div><div class="tdots"><span></span><span></span><span></span></div></div>';
+  const m = MODEL_META[model] || MODEL_META[M_FAST];
+  const tag = '<span style="font-size:10px;opacity:0.6;margin-left:6px;color:'+m.color+'">'+m.icon+' '+m.label+'</span>';
+  d.innerHTML = '<div class="av">🎓</div><div class="mb"><div class="mr">StudyAgent'+tag+'</div><div class="tdots"><span></span><span></span><span></span></div></div>';
   c.appendChild(d); c.scrollTop = c.scrollHeight;
   return id;
 }
